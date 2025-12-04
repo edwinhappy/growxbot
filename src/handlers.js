@@ -25,12 +25,15 @@ async function getWorker() {
     console.log("⚙️ Initializing Tesseract Worker...");
     try {
         const __dirname = path.dirname(fileURLToPath(import.meta.url));
-        // Assuming eng.traineddata is in the project root, one level up from src/
-        const langPath = path.join(__dirname, "../");
+        // Resolve absolute path to the root directory where eng.traineddata is located
+        const langPath = path.resolve(__dirname, "../");
+
+        console.log(`📂 Tesseract Lang Path: ${langPath}`);
 
         tesseractWorker = await createWorker("eng", 1, {
             langPath: langPath,
-            cachePath: path.join(__dirname, "../.tesseract_cache"), // Use a local cache dir or temp
+            gzip: false, // CRITICAL: Tell Tesseract we have the uncompressed .traineddata file
+            cachePath: path.join(__dirname, "../.tesseract_cache"),
             logger: m => {
                 if (m.status === 'recognizing text') {
                     // console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
