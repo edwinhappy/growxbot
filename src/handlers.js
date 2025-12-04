@@ -1473,7 +1473,6 @@ export function setupHandlers(bot) {
     // ===========================
     // HELPER: FORWARD TO ADMIN
     // ===========================
-    // (This helper is no longer strictly needed but kept if referenced elsewhere, or can be removed if unused)
     async function forwardToAdmin(ctx, session, photo, status) {
         const username = session.username || "Unknown";
         const firstName = ctx.from.first_name || '';
