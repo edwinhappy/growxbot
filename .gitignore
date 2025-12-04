@@ -1,0 +1,5 @@
+node_modules/
+.env
+.DS_Store
+.tesseract_cache/
+npm-debug.log
