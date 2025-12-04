@@ -1362,7 +1362,12 @@ export function setupHandlers(bot) {
                 // Extract dimensions from hocr
                 // Format: title='image "..." 0 0 W H'
                 const hocr = ret.data.hocr;
-                const dimMatch = hocr.match(/title='image "[^"]*" 0 0 (\d+) (\d+)/);
+                // Try to match 'bbox 0 0 W H' or 'image "..." 0 0 W H'
+                let dimMatch = hocr.match(/bbox 0 0 (\d+) (\d+)/);
+                if (!dimMatch) {
+                    dimMatch = hocr.match(/title='image "[^"]*" 0 0 (\d+) (\d+)/);
+                }
+
                 let width = 1000; // Fallback
                 let height = 2000; // Fallback
                 if (dimMatch) {

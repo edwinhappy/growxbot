@@ -47,31 +47,29 @@ export function validateProfileLayout(ocrData, width, height) {
         const relY = getRelY(word.bbox);
         const relX = getRelX(word.bbox);
 
-        // Display Name (approximate check, usually large text, but Tesseract doesn't give font size easily without hocr)
-        // We'll rely on position: Y = 0.35 -> 0.42
-        if (relY >= 0.35 && relY <= 0.42) {
-            // This is a candidate for display name, but it's hard to be sure just by one word.
-            // We'll just note we found *something* there.
+        // Display Name (Widen range to support square crops: 0.15 -> 0.55)
+        if (relY >= 0.15 && relY <= 0.55) {
             if (!elements.displayName) elements.displayName = { text: word.text, y: relY };
         }
 
-        // Username: Y = 0.42 -> 0.48
-        if (relY >= 0.42 && relY <= 0.48) {
+        // Username: Y = 0.20 -> 0.65
+        if (relY >= 0.20 && relY <= 0.65) {
             if (!elements.username) elements.username = { text: word.text, y: relY };
         }
 
-        // Joined date: Y = 0.52 -> 0.60 (Look for "joined")
-        if (relY >= 0.52 && relY <= 0.60 && text.includes("joined")) {
+        // Joined date: Y = 0.30 -> 0.90 (Look for "joined")
+        if (relY >= 0.30 && relY <= 0.90 && text.includes("joined")) {
             elements.joinedDate = { text: word.text, y: relY };
         }
 
-        // Following/Followers row: Y = 0.60 -> 0.70 (Look for numbers or "following"/"followers")
-        if (relY >= 0.60 && relY <= 0.70 && (text.includes("following") || text.includes("followers"))) {
+        // Following/Followers row: Y = 0.40 -> 0.95 (Look for numbers or "following"/"followers")
+        if (relY >= 0.40 && relY <= 0.95 && (text.includes("following") || text.includes("followers"))) {
             elements.followingRow = { text: word.text, y: relY };
         }
 
-        // Follow Button: X = 0.75 -> 0.95 AND Y = 0.38 -> 0.50
-        if (relX >= 0.75 && relX <= 0.95 && relY >= 0.38 && relY <= 0.50) {
+        // Follow Button: X = 0.60 -> 0.98 AND Y = 0.30 -> 0.60
+        // (Widened X slightly to catch buttons that might be shifted)
+        if (relX >= 0.60 && relX <= 0.98 && relY >= 0.30 && relY <= 0.60) {
             // Check for button text
             if (text.includes("following") || text.includes("follow")) {
                 elements.followButton = { text: word.text, y: relY, raw: word.text };
