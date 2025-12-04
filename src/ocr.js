@@ -43,43 +43,50 @@ export function validateProfileLayout(ocrData, width, height) {
 
     // 1. Scan for elements
     for (const word of words) {
-        const text = normalizeText(word.text);
+        const rawText = word.text;
+        const text = normalizeText(rawText);
         const relY = getRelY(word.bbox);
         const relX = getRelX(word.bbox);
 
-        // Display Name (Widen range to support square crops: 0.15 -> 0.55)
-        if (relY >= 0.15 && relY <= 0.55) {
-            if (!elements.displayName) elements.displayName = { text: word.text, y: relY };
+        // Ignore very short noise (unless it's a number for stats, but stats look for keywords)
+        if (text.length < 2) continue;
+
+        // Display Name: Y = 0.15 -> 0.55
+        // MUST BE LEFT ALIGNED (relX < 0.5) - This kills centered text like keyboards
+        if (relY >= 0.15 && relY <= 0.55 && relX < 0.6) {
+            if (!elements.displayName) elements.displayName = { text: rawText, y: relY, isStrong: false };
         }
 
         // Username: Y = 0.20 -> 0.65
-        if (relY >= 0.20 && relY <= 0.65) {
-            if (!elements.username) elements.username = { text: word.text, y: relY };
+        // MUST BE LEFT ALIGNED
+        if (relY >= 0.20 && relY <= 0.65 && relX < 0.6) {
+            const isHandle = rawText.startsWith('@') || rawText.startsWith('©'); // OCR sometimes sees @ as ©
+            if (!elements.username || (isHandle && !elements.username.isStrong)) {
+                elements.username = { text: rawText, y: relY, isStrong: isHandle };
+            }
         }
 
         // Joined date: Y = 0.30 -> 0.90 (Look for "joined")
-        if (relY >= 0.30 && relY <= 0.90 && text.includes("joined")) {
-            elements.joinedDate = { text: word.text, y: relY };
+        // MUST BE LEFT ALIGNED
+        if (relY >= 0.30 && relY <= 0.90 && text.includes("joined") && relX < 0.6) {
+            elements.joinedDate = { text: rawText, y: relY, isStrong: true };
         }
 
-        // Following/Followers row: Y = 0.40 -> 0.95 (Look for numbers or "following"/"followers")
+        // Following/Followers row: Y = 0.40 -> 0.95
+        // Usually left aligned too, but can span wider
         if (relY >= 0.40 && relY <= 0.95 && (text.includes("following") || text.includes("followers"))) {
-            elements.followingRow = { text: word.text, y: relY };
+            elements.followingRow = { text: rawText, y: relY, isStrong: true };
         }
 
-        // Follow Button: X = 0.60 -> 0.98 AND Y = 0.30 -> 0.60
-        // (Widened X slightly to catch buttons that might be shifted)
+        // Follow Button: X = 0.60 -> 0.98 (Right side) AND Y = 0.30 -> 0.60
         if (relX >= 0.60 && relX <= 0.98 && relY >= 0.30 && relY <= 0.60) {
-            // Check for button text
             if (text.includes("following") || text.includes("follow")) {
-                elements.followButton = { text: word.text, y: relY, raw: word.text };
+                elements.followButton = { text: rawText, y: relY, raw: rawText };
             }
         }
     }
 
     // 2. Validate Ordering
-    // display_nameY < usernameY < joinedY < followingRowY
-    // We allow some missing elements but if they exist they must be in order.
     let lastY = 0;
     const orderChecks = [
         elements.displayName,
@@ -88,13 +95,17 @@ export function validateProfileLayout(ocrData, width, height) {
         elements.followingRow
     ];
 
+    let foundCount = 0;
+    let strongCount = 0;
+
     for (const el of orderChecks) {
         if (el) {
             if (el.y < lastY) {
-                // Out of order
                 return { isValid: false, reason: "Layout mismatch (elements out of order)", followState: "unknown", confidence: 50 };
             }
             lastY = el.y;
+            foundCount++;
+            if (el.isStrong) strongCount++;
         }
     }
 
@@ -107,24 +118,22 @@ export function validateProfileLayout(ocrData, width, height) {
         } else if (btnText.includes("follow") || btnText.includes("f0llow")) {
             followState = "not_following";
         }
-    } else {
-        // Fallback: Scan entire text for "Following" if button not found in exact spot?
-        // The user requirement says: "If button text cannot be located in the top-right button zone -> follow_state = 'unknown'"
-        // So we stick to that.
-        followState = "unknown";
     }
 
     // 4. Final Validity Check
-    // If we didn't find *any* key elements, it's probably not a profile.
-    const foundCount = orderChecks.filter(e => e).length;
+    // Must have at least 2 elements AND (at least 1 strong element OR 3+ elements)
     if (foundCount < 2) {
         return { isValid: false, reason: "Not enough profile elements found", followState: "unknown", confidence: 20 };
+    }
+
+    if (strongCount === 0 && foundCount < 3) {
+        return { isValid: false, reason: "Ambiguous layout (no strong markers like '@', 'joined', 'following')", followState: "unknown", confidence: 40 };
     }
 
     return {
         isValid: true,
         reason: "Valid layout",
         followState: followState,
-        confidence: 90 // High confidence if layout matches
+        confidence: strongCount > 1 ? 95 : 85
     };
 }
