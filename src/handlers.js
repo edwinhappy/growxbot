@@ -1411,6 +1411,7 @@ export function setupHandlers(bot) {
 
                 } else {
                     // MANUAL REVIEW NEEDED
+                    session.step = "done";
                     let reason = validation.reason;
                     if (validation.followState === "not_following") reason = "Detected 'Follow' button (Not Following)";
                     if (!hasOwner) reason += " | Owner username not found";
@@ -1440,6 +1441,7 @@ export function setupHandlers(bot) {
 
             } catch (error) {
                 logger.error("OCR Error:", error);
+                session.step = "done";
                 await ctx.reply("⚠️ Error checking image. Admin will review manually.");
                 // Forward to admin on error too
                 await bot.telegram.sendPhoto(ADMIN_GROUP_ID, photo, {
