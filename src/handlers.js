@@ -445,7 +445,7 @@ export function setupHandlers(bot) {
 
         userSessions[userId].step = "screenshot";
         await ctx.replyWithPhoto(
-            "https://i.imgur.com/YourInstructionalImage.jpg", // Replace with actual URL
+            { source: "assets/example_screenshot.png" },
             {
                 caption:
                     `📸 <b>Bet. Send the screenshot.</b>\n\n` +
