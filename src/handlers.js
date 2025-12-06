@@ -17,60 +17,165 @@ import {
 // ===========================
 // TESSERACT WORKER (SINGLETON)
 // ===========================
-let tesseractWorker = null;
+class OCRWorkerManager {
+    constructor() {
+        this.worker = null;
+        this.isInitializing = false;
+        this.initAttempts = 0;
+        this.maxInitAttempts = 3;
+    }
 
-async function getWorker() {
-    if (tesseractWorker) return tesseractWorker;
+    async getWorker() {
+        if (this.worker && !this.isInitializing) {
+            return this.worker;
+        }
 
-    console.log("⚙️ Initializing Tesseract Worker...");
-    try {
-        const __dirname = path.dirname(fileURLToPath(import.meta.url));
-        // Resolve absolute path to the root directory where eng.traineddata is located
-        const langPath = path.resolve(__dirname, "../");
+        if (this.isInitializing) {
+            // Wait for initialization to complete
+            await this.waitForInitialization();
+            return this.worker;
+        }
 
-        console.log(`📂 Tesseract Lang Path: ${langPath}`);
+        return await this.initializeWorker();
+    }
 
-        tesseractWorker = await createWorker("eng", 1, {
-            langPath: langPath,
-            gzip: false, // CRITICAL: Tell Tesseract we have the uncompressed .traineddata file
-            cachePath: path.join(__dirname, "../.tesseract_cache"),
-            logger: m => {
-                if (m.status === 'recognizing text') {
-                    // console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
+    async initializeWorker() {
+        this.isInitializing = true;
+        this.initAttempts = 0;
+        try {
+            console.log("⚙️ Initializing Tesseract Worker...");
+            const __dirname = path.dirname(fileURLToPath(import.meta.url));
+            const langPath = path.resolve(__dirname, "../");
+            const cachePath = path.join(__dirname, "../.tesseract_cache");
+
+            console.log(`📂 Tesseract Lang Path: ${langPath}`);
+
+            this.worker = await createWorker("eng", 1, {
+                langPath: langPath,
+                gzip: false,
+                cachePath: cachePath,
+                logger: m => {
+                    if (m.status === 'recognizing text') {
+                        // Log progress if needed
+                    }
                 }
+            });
+            console.log("✅ Tesseract Worker Ready!");
+            this.isInitializing = false;
+            return this.worker;
+        } catch (error) {
+            this.initAttempts++;
+            console.error(`❌ Failed to init Tesseract (attempt ${this.initAttempts}):`, error);
+
+            if (this.initAttempts < this.maxInitAttempts) {
+                console.log(`🔄 Retrying initialization...`);
+                await new Promise(resolve => setTimeout(resolve, 2000 * this.initAttempts));
+                return await this.initializeWorker();
+            } else {
+                this.isInitializing = false;
+                throw new Error(`Failed to initialize Tesseract after ${this.maxInitAttempts} attempts: ${error.message}`);
             }
-        });
-        console.log("✅ Tesseract Worker Ready!");
-        return tesseractWorker;
-    } catch (error) {
-        console.error("❌ Failed to init Tesseract:", error);
-        throw error;
+        }
+    }
+
+    async waitForInitialization() {
+        while (this.isInitializing) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
+
+    async terminateWorker() {
+        if (this.worker) {
+            try {
+                await this.worker.terminate();
+            } catch (error) {
+                console.error("Error terminating worker:", error);
+            }
+            this.worker = null;
+        }
     }
 }
+
+// Usage
+const ocrManager = new OCRWorkerManager();
 
 // ===========================
 // SESSION MANAGEMENT
 // ===========================
-const userSessions = {};
-const SESSION_TIMEOUT = 10 * 60 * 1000;
+class SessionManager {
+    constructor() {
+        this.sessions = new Map();
+        this.SESSION_TIMEOUT = 10 * 60 * 1000; // 10 minutes
+        this.cleanupInterval = null;
+        this.startCleanupTimer();
+    }
 
-export const resetSession = (userId) => {
-    userSessions[userId] = {
-        step: "username",
-        username: null,
-        attempts: 0,
-        startTime: Date.now()
-    };
-};
+    startCleanupTimer() {
+        this.cleanupInterval = setInterval(() => {
+            this.cleanupExpiredSessions();
+        }, 5 * 60 * 1000); // Run every 5 minutes
+    }
 
-setInterval(() => {
-    const now = Date.now();
-    for (const [userId, session] of Object.entries(userSessions)) {
-        if (now - session.startTime > SESSION_TIMEOUT) {
-            delete userSessions[userId];
+    cleanupExpiredSessions() {
+        const now = Date.now();
+        let cleanedCount = 0;
+        for (const [userId, session] of this.sessions.entries()) {
+            if (now - session.startTime > this.SESSION_TIMEOUT) {
+                this.sessions.delete(userId);
+                cleanedCount++;
+            }
+        }
+        if (cleanedCount > 0) {
+            logger.info(`Cleaned up ${cleanedCount} expired sessions`);
         }
     }
-}, 5 * 60 * 1000);
+
+    createSession(userId) {
+        const session = {
+            step: "username",
+            username: null,
+            attempts: 0,
+            startTime: Date.now(),
+            lastActivity: Date.now()
+        };
+        this.sessions.set(userId, session);
+        return session;
+    }
+
+    getSession(userId) {
+        const session = this.sessions.get(userId);
+        if (session) {
+            session.lastActivity = Date.now();
+        }
+        return session;
+    }
+
+    updateSession(userId, updates) {
+        const session = this.sessions.get(userId);
+        if (session) {
+            Object.assign(session, updates);
+            session.lastActivity = Date.now();
+        }
+        return session;
+    }
+
+    deleteSession(userId) {
+        return this.sessions.delete(userId);
+    }
+
+    destroy() {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+        }
+        this.sessions.clear();
+    }
+}
+
+const sessionManager = new SessionManager();
+
+export const resetSession = (userId) => {
+    sessionManager.createSession(userId);
+};
 
 // ===========================
 // HELPER: SEND PROFILES TO USER
@@ -191,6 +296,7 @@ export function setupHandlers(bot) {
 
                 await ctx.answerCbQuery('✅ Sent! Waiting for them to confirm.');
 
+                // Update message to show pending state
                 await ctx.editMessageCaption(
                     ctx.callbackQuery.message.caption + '\n\n⏳ <b>Waiting for confirmation...</b>',
                     {
@@ -202,7 +308,23 @@ export function setupHandlers(bot) {
                 );
             } catch (dmError) {
                 logger.error(`Failed to send confirmation request to user ${profileUserId}:`, dmError.message);
+
+                // Clean up session state
+                sessionManager.deleteSession(userId);
+
+                // Notify the user who clicked the button
                 await ctx.answerCbQuery('❌ Could not reach user (they might have blocked the bot)');
+
+                // Update the original message to reflect the failure
+                await ctx.editMessageCaption(
+                    ctx.callbackQuery.message.caption + '\n\n❌ <b>Failed to notify user</b>',
+                    {
+                        parse_mode: "HTML",
+                        ...Markup.inlineKeyboard([
+                            [Markup.button.url(`🔗 View Profile`, `https://x.com/${followed.x_username}`)]
+                        ])
+                    }
+                );
             }
         } catch (error) {
             logger.error('Error handling followed action:', error);
@@ -329,7 +451,7 @@ export function setupHandlers(bot) {
         if (ctx.from.id !== ADMIN_ID) return ctx.answerCbQuery("⚠️ Admin only");
 
         const targetId = parseInt(ctx.match[1]);
-        const session = userSessions[targetId];
+        const session = sessionManager.getSession(targetId);
         const username = session?.username || "Unknown";
 
         try {
@@ -352,7 +474,7 @@ export function setupHandlers(bot) {
                 { parse_mode: "HTML", ...Markup.inlineKeyboard([]) }
             );
 
-            if (userSessions[targetId]) delete userSessions[targetId];
+            sessionManager.deleteSession(targetId);
 
         } catch (error) {
             logger.error("Error verifying user:", error);
@@ -385,7 +507,7 @@ export function setupHandlers(bot) {
                 { parse_mode: "HTML", ...Markup.inlineKeyboard([]) }
             );
 
-            if (userSessions[targetId]) delete userSessions[targetId];
+            sessionManager.deleteSession(targetId);
 
         } catch (error) {
             logger.error("Error rejecting user:", error);
@@ -439,11 +561,12 @@ export function setupHandlers(bot) {
 
     bot.action("i_have_followed", async (ctx) => {
         const userId = ctx.from.id;
-        if (!userSessions[userId] || !userSessions[userId].username) {
+        const session = sessionManager.getSession(userId);
+        if (!session || !session.username) {
             return ctx.reply("⚠️ Session expired. /start again.");
         }
 
-        userSessions[userId].step = "screenshot";
+        session.step = "screenshot";
         await ctx.replyWithPhoto(
             { source: "assets/example_screenshot.png" },
             {
@@ -957,7 +1080,8 @@ export function setupHandlers(bot) {
         if (!username) return ctx.reply("Usage: /verify @username");
 
         let foundId = null;
-        for (const [id, session] of Object.entries(userSessions)) {
+
+        for (const [id, session] of sessionManager.sessions.entries()) {
             if (session.username?.toLowerCase() === username.toLowerCase()) {
                 foundId = id;
                 break;
@@ -968,7 +1092,7 @@ export function setupHandlers(bot) {
             await db.addUser(foundId, "Manually Verified", username);
             await bot.telegram.sendMessage(foundId, `✅ <b>Admin verified you!</b>`, { parse_mode: "HTML" });
             await ctx.reply(`✅ Verified @${username}`);
-            delete userSessions[foundId];
+            sessionManager.deleteSession(foundId);
         } else {
             ctx.reply("❌ User not found in pending sessions.");
         }
@@ -1112,7 +1236,8 @@ export function setupHandlers(bot) {
         if (ctx.from.id !== ADMIN_ID) return;
 
         resetSession(ADMIN_ID);
-        userSessions[ADMIN_ID].step = "broadcast_msg";
+        const session = sessionManager.getSession(ADMIN_ID);
+        if (session) session.step = "broadcast_msg";
 
         await ctx.editMessageText(
             `📢 <b>Broadcast</b>\n\n` +
@@ -1193,7 +1318,8 @@ export function setupHandlers(bot) {
         const userId = ctx.from.id;
 
         // ADMIN BROADCAST HANDLER
-        if (ctx.from.id === ADMIN_ID && userSessions[ADMIN_ID]?.step === "broadcast_msg") {
+        const adminSession = sessionManager.getSession(ADMIN_ID);
+        if (ctx.from.id === ADMIN_ID && adminSession?.step === "broadcast_msg") {
             const message = ctx.message.text;
             if (!message) return ctx.reply("Send text fam.");
 
@@ -1223,7 +1349,7 @@ export function setupHandlers(bot) {
                 `❌ Failed: ${failed}`
             );
 
-            delete userSessions[ADMIN_ID];
+            sessionManager.deleteSession(ADMIN_ID);
             return;
         }
 
@@ -1292,11 +1418,10 @@ export function setupHandlers(bot) {
         // USER FLOW HANDLER (DMs only)
         if (ctx.chat.type !== "private") return;
 
-        if (!userSessions[userId]) {
+        const session = sessionManager.getSession(userId);
+        if (!session) {
             return ctx.reply("👋 Type /start to get verified!");
         }
-
-        const session = userSessions[userId];
 
         // STEP 1: GET X USERNAME
         if (session.step === "username" && ctx.message.text) {
@@ -1354,7 +1479,7 @@ export function setupHandlers(bot) {
 
             try {
                 // Use singleton worker
-                const worker = await getWorker();
+                const worker = await ocrManager.getWorker();
                 const ret = await worker.recognize(fileLink.href);
                 // Do NOT terminate the worker! We reuse it.
                 // await worker.terminate();
@@ -1407,7 +1532,7 @@ export function setupHandlers(bot) {
                         { parse_mode: "HTML" }
                     );
 
-                    delete userSessions[userId];
+                    sessionManager.deleteSession(userId);
 
                 } else {
                     // MANUAL REVIEW NEEDED

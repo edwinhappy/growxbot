@@ -70,20 +70,40 @@ export class Database {
     // ===========================
     async addUser(telegramId, telegramName, xUsername) {
         try {
+            // Input validation
+            if (!telegramId || typeof telegramId !== 'number' || telegramId <= 0) {
+                throw new Error('Invalid telegramId');
+            }
+            if (!telegramName || typeof telegramName !== 'string' || telegramName.length > 100) {
+                throw new Error('Invalid telegramName');
+            }
+            if (!xUsername || typeof xUsername !== 'string' || !/^[a-zA-Z0-9_]{1,15}$/.test(xUsername)) {
+                throw new Error('Invalid xUsername');
+            }
+
+            // Sanitize inputs
+            const sanitizedName = telegramName.trim();
+            const sanitizedUsername = xUsername.toLowerCase().trim();
+
             const newUser = await User.findOneAndUpdate(
                 { telegram_id: telegramId },
                 {
-                    telegram_name: telegramName,
-                    x_username: xUsername,
+                    telegram_name: sanitizedName,
+                    x_username: sanitizedUsername,
                     verified: true,
                     timestamp: new Date(),
                     last_active: new Date()
                 },
                 { upsert: true, new: true }
             );
-            this.users[telegramId] = newUser.toObject();
+            // Atomic cache update
+            if (newUser && newUser.telegram_id) {
+                this.users[telegramId] = { ...newUser.toObject() };
+            }
+            return newUser;
         } catch (err) {
             console.error("Error adding user:", err);
+            throw err;
         }
     }
 
