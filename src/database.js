@@ -96,8 +96,16 @@ export class Database {
         if (!MONGO_URI) throw new Error('MONGO_URI missing in config');
 
         try {
-            await mongoose.connect(MONGO_URI);
+            await mongoose.connect(process.env.MONGO_URI, {
+                serverSelectionTimeoutMS: 5000,
+                socketTimeoutMS: 45000,
+            });
             console.log("✅ Connected to MongoDB");
+
+            // Handle connection errors after initial connection
+            mongoose.connection.on('error', err => {
+                console.error('❌ MongoDB Connection Error:', err);
+            });
 
             // Optional Redis connection
             try {
