@@ -1,90 +1,71 @@
-import { Telegraf } from "telegraf";
-import { BOT_TOKEN, ADMIN_ID, ADMIN_GROUP_ID, OWNER_X, ENABLE_LOGS } from "./src/config.js";
-import { db } from "./src/database.js";
-import { logger, checkRateLimit } from "./src/utils.js";
-import { setupHandlers } from "./src/handlers.js";
-
-import express from "express";
+import { Telegraf } from 'telegraf';
+import { BOT_TOKEN, ADMIN_ID } from './src/config.js';
+import { setupHandlers, shutdown } from './src/setupHandlers.js';
+import { checkRateLimit } from './src/rateLimiter.js';
+import express from 'express';
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// ===========================
-// DUMMY SERVER FOR RENDER
-// ===========================
+// Express health check
 const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.get("/health", (req, res) => res.send("OK"));
-
-app.listen(PORT, () => {
-  console.log(`🌐 Web server running on port ${PORT}`);
+app.get("/health", (req, res) => res.json({ status: "OK", timestamp: Date.now() }));
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`🌐 Health check running on port ${process.env.PORT || 3000}`);
 });
 
-// ===========================
-// RATE LIMIT MIDDLEWARE
-// ===========================
-bot.use((ctx, next) => {
-  if (ctx.from && !checkRateLimit(ctx.from.id)) {
-    return ctx.reply("⏰ Whoa, slow down fam. Give it a minute.");
+
+// Rate limiting (bypass admin)
+bot.use(async (ctx, next) => {
+  if (!ctx.from) return next();
+
+  if (!await checkRateLimit(ctx.from.id, ctx.from.id === ADMIN_ID)) {
+    try {
+      if (ctx.callbackQuery) {
+        return await ctx.answerCbQuery("⏰ Rate limit exceeded. Chill out fam.", true);
+      } else {
+        return await ctx.reply("⏰ Rate limit exceeded. Please wait a minute.");
+      }
+    } catch (e) {
+      console.error("Rate limit reply failed:", e);
+    }
   }
   return next();
 });
 
-// ===========================
-// SETUP HANDLERS
-// ===========================
-setupHandlers(bot);
-
-// ===========================
-// STARTUP
-// ===========================
-async function start() {
-  console.log("🚀 Starting X Verification & Growth Bot...");
-  console.log("=".repeat(60));
-
-  try {
-    await db.load();
-    const stats = db.getStats();
-    console.log(`✅ Database loaded: ${stats.totalUsers} verified users`);
-    console.log(`🔗 Total matches made: ${stats.totalMatches}`);
-  } catch (error) {
-    logger.error("❌ Failed to load database:", error.message);
-    process.exit(1);
-  }
-
-  try {
-    await bot.launch();
-    console.log("✅ Bot is running and ready!");
-    console.log(`📝 Owner X account: @${OWNER_X}`);
-    console.log(`👤 Admin ID: ${ADMIN_ID}`);
-    console.log(`👥 Admin Group: ${ADMIN_GROUP_ID}`);
-    console.log(`🔇 Verbose logging: ${ENABLE_LOGS ? 'ENABLED' : 'DISABLED'}`);
-    console.log("\n📋 Admin Commands:");
-    console.log("   /distribute [count] - Send profiles to all users");
-    console.log("   /send_to @username [count] - Send to specific user");
-    console.log("   /adminstats - View statistics");
-    console.log("   /list_users - List all verified users");
-    console.log("   /reset_matches - Reset match history");
-    console.log("   /broadcast - Send announcement");
-    console.log("\n📨 Waiting for messages...\n");
-    console.log("=".repeat(60));
-  } catch (error) {
-    logger.error("❌ Failed to launch bot:", error.message);
-    process.exit(1);
-  }
-
-  process.once("SIGINT", () => {
-    console.log("\n⏹️  Shutting down gracefully...");
-    bot.stop("SIGINT");
-  });
-
-  process.once("SIGTERM", () => {
-    console.log("\n⏹️  Shutting down gracefully...");
-    bot.stop("SIGTERM");
-  });
+// Setup handlers
+// Setup handlers
+try {
+  await setupHandlers(bot);
+} catch (error) {
+  console.error("❌ Fatal error during setup:", error);
+  process.exit(1);
 }
 
-start().catch((error) => {
-  logger.error("❌ Fatal error:", error);
+// Global Error Handlers
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🚨 Unhandled Rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('🚨 Uncaught Exception:', error);
   process.exit(1);
+});
+
+// Start bot
+console.log("🚀 Starting X Verification & Growth Bot...");
+bot.launch().then(() => {
+  console.log("✅ Bot is running!");
+}).catch(err => {
+  console.error("❌ Failed to launch bot:", err);
+});
+
+// Graceful shutdown
+process.once("SIGINT", async () => {
+  await shutdown();
+  bot.stop("SIGINT");
+  process.exit(0);
+});
+process.once("SIGTERM", async () => {
+  await shutdown();
+  bot.stop("SIGTERM");
+  process.exit(0);
 });

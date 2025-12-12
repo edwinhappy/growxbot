@@ -10,6 +10,10 @@ export function escapeHtml(text) {
         .replace(/'/g, '&#39;');
 }
 
+export function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export const logger = {
     log: (...args) => {
         if (ENABLE_LOGS) console.log(...args);
@@ -21,28 +25,3 @@ export const logger = {
         if (ENABLE_LOGS) console.log(...args);
     }
 };
-
-const userRateLimits = new Map();
-const RATE_LIMIT_WINDOW = 60000;
-const MAX_REQUESTS_PER_WINDOW = 5;
-
-export function checkRateLimit(userId) {
-    const now = Date.now();
-    const userLimit = userRateLimits.get(userId) || {
-        count: 0,
-        resetTime: now + RATE_LIMIT_WINDOW
-    };
-
-    if (now > userLimit.resetTime) {
-        userLimit.count = 0;
-        userLimit.resetTime = now + RATE_LIMIT_WINDOW;
-    }
-
-    if (userLimit.count >= MAX_REQUESTS_PER_WINDOW) {
-        return false;
-    }
-
-    userLimit.count++;
-    userRateLimits.set(userId, userLimit);
-    return true;
-}
