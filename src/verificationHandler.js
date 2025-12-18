@@ -261,9 +261,9 @@ export function setupVerificationHandlers(bot) {
             {
                 caption:
                     `📸 <b>Bet. Send the screenshot.</b>\n\n` +
-                    `Show you follow @${escapeHtml(OWNER_X)}.\n` +
-                    `Make sure "Following" is visible.\n` +
-                    `See the example above for the required layout.`,
+                    `Show you follow @${escapeHtml(OWNER_X)}.\n\n` +
+                    `Make sure "Following" is visible.\n\n` +
+                    `See the EXAMPLE above for the required SCREENSHOT.`,
                 parse_mode: "HTML"
             }
         );
