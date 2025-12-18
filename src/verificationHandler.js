@@ -235,15 +235,15 @@ export function setupVerificationHandlers(bot) {
         await resetSession(userId);
 
         const welcomeMsg =
-            `👋 <b>Welcome to X Growth!</b>\n\n` +
+            `👋 <b>Welcome to GROWOURX!</b>\n\n` +
             `Get verified, get followers. Simple.\n\n` +
-            `<b>📝 Steps:</b>\n` +
-            `1️⃣ Follow @${escapeHtml(OWNER_X)}\n` +
-            `2️⃣ Send your X username\n` +
-            `3️⃣ Send proof (screenshot)\n` +
-            `4️⃣ Wait for approval\n` +
-            `5️⃣ Profit 🚀\n\n` +
-            `<b>Ready?</b> Send your X username (e.g., @yourhandle)`;
+            `<b>📝 HOW TO GET IN:</b>\n` +
+            `1️⃣ Follow @${escapeHtml(OWNER_X)}\n\n` +
+            `2️⃣ Send your X username\n\n` +
+            `3️⃣ Send screenshot(CROPPED AS NEEDED)\n\n` +
+            `4️⃣ Wait for approval\n\n` +
+            `5️⃣ GROW YOUR ACCOUNT\n\n` +
+            `<b>Ready?</b> Send your X username RN`;
 
         await ctx.reply(welcomeMsg, { parse_mode: "HTML" });
     });
