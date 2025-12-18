@@ -260,7 +260,7 @@ export function setupVerificationHandlers(bot) {
             { source: "assets/example_screenshot.png" },
             {
                 caption:
-                    `📸 <b>Bet. Send the screenshot.</b>\n\n` +
+                    `📸 <b>Bet. Send the screenshot asap.</b>\n\n` +
                     `Show you follow @${escapeHtml(OWNER_X)}.\n\n` +
                     `Make sure "Following" is visible.\n\n` +
                     `See the EXAMPLE above for the required SCREENSHOT.`,
